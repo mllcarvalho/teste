@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\common\Oficina.Common.Application\Oficina.Common.Application.csproj" />
+    <ProjectReference Include="..\..\estoque\Oficina.Estoque.Application\Oficina.Estoque.Application.csproj" />
+    <ProjectReference Include="..\Oficina.Atendimento.Domain\Oficina.Atendimento.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

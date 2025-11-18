@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- Configuração Coverlet MSBuild -->
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutput>$(MSBuildProjectDirectory)/TestResults/coverage.opencover.xml</CoverletOutput>
+    <CoverletOutputFormat>opencover,cobertura</CoverletOutputFormat>
+    <ExcludeByFile>**\Migrations\*.cs;**\Generated\*.cs</ExcludeByFile>
+    <Exclude>[xunit.*]*;[*]Oficina.*.Migrations.*</Exclude>
+
+    <Threshold>0</Threshold>
+    <ThresholdType>line,branch,method</ThresholdType>
+    <ThresholdStat>Total</ThresholdStat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pacotes de teste -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.9" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="FluentAssertions" Version="8.7.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.10" />
+
+    <!-- Coverlet MSBuild -->
+    <PackageReference Include="coverlet.msbuild" Version="3.2.0" />
+
+    <!-- ReportGenerator (opcional, apenas se quiser rodar manualmente) -->
+    <PackageReference Include="ReportGenerator" Version="5.3.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\atendimento\Oficina.Atendimento.Infrastructure\Oficina.Atendimento.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\estoque\Oficina.Estoque.Application\Oficina.Estoque.Application.csproj" />
+    <ProjectReference Include="..\..\src\estoque\Oficina.Estoque.Infrastructure\Oficina.Estoque.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Oficina.Api\Oficina.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

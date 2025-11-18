@@ -1,0 +1,17 @@
+﻿<Project>
+  <PropertyGroup>
+    <!-- Ativa a coleta de cobertura -->
+    <CollectCoverage>true</CollectCoverage>
+
+    <!-- Formatos de saída de relatório -->
+    <CoverletOutputFormat>lcov,cobertura,opencover</CoverletOutputFormat>
+
+    <!-- Pasta de saída dos relatórios -->
+    <CoverletOutput>$(MSBuildProjectDirectory)/TestResults/coverage.info</CoverletOutput>
+
+    <!-- Thresholds -->
+    <Threshold>80</Threshold>
+    <ThresholdType>line,branch,method</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+  </PropertyGroup>
+</Project>
