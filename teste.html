@@ -281,65 +281,93 @@
 
         async function loadProjectsFromS3() {
             try {
+                // IMPORTANTE: O delimiter=/ é essencial para listar só pastas
                 const url = `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`;
                 
-                console.log('🔍 Buscando projetos em:', url);
-                console.log('📦 Bucket:', BUCKET_NAME);
-                console.log('🌍 Região:', BUCKET_REGION);
+                console.log('🔍 Buscando em:', url);
                 
                 const response = await fetch(url);
                 
-                console.log('📡 Status da resposta:', response.status);
-                console.log('📡 Response OK?:', response.ok);
+                console.log('📡 Status:', response.status);
                 
                 if (!response.ok) {
-                    throw new Error(`Erro HTTP: ${response.status} - ${response.statusText}`);
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
 
                 const xmlText = await response.text();
                 
-                console.log('📄 XML recebido (primeiros 500 chars):', xmlText.substring(0, 500));
+                // Log do XML para debug
+                console.log('📄 XML recebido:', xmlText);
                 
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
 
-                // Verifica se tem erro no XML
+                // Verifica erros
                 const errorNode = xmlDoc.querySelector('Error');
                 if (errorNode) {
                     const errorCode = xmlDoc.querySelector('Code')?.textContent;
                     const errorMessage = xmlDoc.querySelector('Message')?.textContent;
-                    console.error('❌ Erro no XML:', errorCode, errorMessage);
                     throw new Error(`S3 Error: ${errorCode} - ${errorMessage}`);
                 }
 
-                // Extrai os prefixos (pastas)
+                // IMPORTANTE: Pega APENAS CommonPrefixes (pastas), ignora Contents (arquivos)
                 const prefixes = xmlDoc.getElementsByTagName('CommonPrefixes');
                 
-                console.log('📁 Número de CommonPrefixes encontrados:', prefixes.length);
+                console.log('📁 Pastas encontradas:', prefixes.length);
                 
+                // Se não encontrou pastas
                 if (prefixes.length === 0) {
-                    console.warn('⚠️ Nenhuma pasta encontrada em apps/');
-                    console.log('📄 XML completo:', xmlText);
-                    throw new Error('Nenhuma pasta encontrada em /apps/. Certifique-se de ter feito deploy de pelo menos um projeto.');
+                    // Verifica se tem Contents (arquivos) - para debug
+                    const contents = xmlDoc.getElementsByTagName('Contents');
+                    console.log('📄 Arquivos encontrados (não vamos usar):', contents.length);
+                    
+                    throw new Error(`Nenhuma pasta encontrada em /apps/. 
+                        Certifique-se de ter a estrutura: apps/projeto1/index.html`);
                 }
                 
-                projects = Array.from(prefixes).map(prefix => {
-                    const prefixText = prefix.getElementsByTagName('Prefix')[0].textContent;
-                    const projectName = prefixText.replace(APPS_PREFIX, '').replace('/', '');
+                // Processa APENAS as pastas
+                projects = [];
+                
+                for (let i = 0; i < prefixes.length; i++) {
+                    const prefix = prefixes[i];
+                    const prefixElement = prefix.getElementsByTagName('Prefix')[0];
                     
-                    console.log('✅ Projeto encontrado:', projectName);
+                    if (!prefixElement) {
+                        console.warn('⚠️ Prefix element não encontrado no índice', i);
+                        continue;
+                    }
                     
-                    return {
+                    const prefixText = prefixElement.textContent;
+                    
+                    // Remove "apps/" e a barra final
+                    // "apps/projeto1/" -> "projeto1"
+                    const projectName = prefixText
+                        .replace(APPS_PREFIX, '')
+                        .replace(/\/$/, '');
+                    
+                    // Ignora se o nome estiver vazio
+                    if (!projectName) {
+                        console.warn('⚠️ Nome do projeto vazio, ignorando');
+                        continue;
+                    }
+                    
+                    console.log('✅ Projeto:', projectName, '| Path:', prefixText);
+                    
+                    projects.push({
                         name: formatProjectName(projectName),
                         path: `/${prefixText}`,
                         description: 'Documentação de decisões arquiteturais',
                         icon: getProjectIcon(projectName),
                         rawName: projectName
-                    };
-                });
+                    });
+                }
 
-                console.log('✅ Total de projetos carregados:', projects.length);
-                console.log('📊 Projetos:', projects);
+                console.log('✅ Total processado:', projects.length);
+                console.log('📊 Projetos finais:', projects);
+
+                if (projects.length === 0) {
+                    throw new Error('Nenhum projeto válido encontrado');
+                }
 
                 loading.style.display = 'none';
                 searchBox.style.display = 'block';
@@ -347,44 +375,12 @@
                 renderProjects();
 
             } catch (error) {
-                console.error('💥 Erro completo:', error);
-                
-                let errorDetails = '';
-                
-                if (error.message.includes('CORS')) {
-                    errorDetails = `
-                        <strong>Problema de CORS detectado</strong><br>
-                        Configure CORS no bucket S3:<br>
-                        <code style="display:block; background:#fff; padding:10px; margin:10px 0; border-radius:4px;">
-                        [{<br>
-                        &nbsp;&nbsp;"AllowedHeaders": ["*"],<br>
-                        &nbsp;&nbsp;"AllowedMethods": ["GET", "HEAD"],<br>
-                        &nbsp;&nbsp;"AllowedOrigins": ["*"],<br>
-                        &nbsp;&nbsp;"ExposeHeaders": []<br>
-                        }]
-                        </code>
-                    `;
-                } else if (error.message.includes('AccessDenied')) {
-                    errorDetails = `
-                        <strong>Acesso negado ao bucket</strong><br>
-                        Verifique se o bucket tem Block Public Access desabilitado
-                        ou configure uma Bucket Policy apropriada.
-                    `;
-                } else if (error.message.includes('NoSuchBucket')) {
-                    errorDetails = `
-                        <strong>Bucket não encontrado</strong><br>
-                        Verifique se o nome do bucket está correto: <code>${BUCKET_NAME}</code><br>
-                        E se a região está correta: <code>${BUCKET_REGION}</code>
-                    `;
-                } else {
-                    errorDetails = error.message;
-                }
-                
+                console.error('💥 Erro:', error);
                 loading.innerHTML = `
                     <div class="error-message">
                         <strong>❌ Erro ao carregar projetos</strong>
-                        ${errorDetails}
-                        <small>Abra o console do navegador (F12) para mais detalhes</small>
+                        ${error.message}
+                        <small>Abra o console (F12) para mais detalhes</small>
                     </div>
                 `;
             }
