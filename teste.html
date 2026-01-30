@@ -221,12 +221,13 @@
         // CONFIGURAÇÃO - MUDE AQUI
         // ==========================================
         const BUCKET_NAME = 'seu-bucket';  // <<<< COLOQUE O NOME DO SEU BUCKET
-        const BUCKET_REGION = 'us-east-1'; // <<<< COLOQUE SUA REGIÃO (us-east-1, sa-east-1, etc)
         const APPS_PREFIX = 'apps/';
-        
-        // Endpoint direto do S3 (não CloudFront)
-        const S3_API_URL = `https://${BUCKET_NAME}.s3.${BUCKET_REGION}.amazonaws.com`;
-        // ==========================================
+
+        // URL principal (CloudFront)
+        const S3_API_URL = 'https://sua-distribuicao.cloudfront.net';
+
+        // URL alternativa (S3 direto ou outro domínio)
+        const S3_API_URL_ALTERNATIVO = `https://${BUCKET_NAME}.s3.${BUCKET_REGION}.amazonaws.com`;
 
         let projects = [];
         const projectGrid = document.getElementById('projectGrid');
@@ -280,110 +281,110 @@
         }
 
         async function loadProjectsFromS3() {
-            try {
-                // IMPORTANTE: O delimiter=/ é essencial para listar só pastas
-                const url = `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`;
-                
-                console.log('🔍 Buscando em:', url);
-                
-                const response = await fetch(url);
-                
-                console.log('📡 Status:', response.status);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const xmlText = await response.text();
-                
-                // Log do XML para debug
-                console.log('📄 XML recebido:', xmlText);
-                
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-
-                // Verifica erros
-                const errorNode = xmlDoc.querySelector('Error');
-                if (errorNode) {
-                    const errorCode = xmlDoc.querySelector('Code')?.textContent;
-                    const errorMessage = xmlDoc.querySelector('Message')?.textContent;
-                    throw new Error(`S3 Error: ${errorCode} - ${errorMessage}`);
-                }
-
-                // IMPORTANTE: Pega APENAS CommonPrefixes (pastas), ignora Contents (arquivos)
-                const prefixes = xmlDoc.getElementsByTagName('CommonPrefixes');
-                
-                console.log('📁 Pastas encontradas:', prefixes.length);
-                
-                // Se não encontrou pastas
-                if (prefixes.length === 0) {
-                    // Verifica se tem Contents (arquivos) - para debug
-                    const contents = xmlDoc.getElementsByTagName('Contents');
-                    console.log('📄 Arquivos encontrados (não vamos usar):', contents.length);
+            // Lista de URLs para tentar (em ordem de prioridade)
+            const urls = [
+                `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`,  // Tenta primeiro
+                `${S3_API_URL_ALTERNATIVO}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`  // Fallback
+            ];
+            
+            let lastError = null;
+            
+            // Tenta cada URL até uma funcionar
+            for (let i = 0; i < urls.length; i++) {
+                try {
+                    const url = urls[i];
+                    console.log(`🔍 Tentativa ${i + 1}/${urls.length}: ${url}`);
                     
-                    throw new Error(`Nenhuma pasta encontrada em /apps/. 
-                        Certifique-se de ter a estrutura: apps/projeto1/index.html`);
-                }
-                
-                // Processa APENAS as pastas
-                projects = [];
-                
-                for (let i = 0; i < prefixes.length; i++) {
-                    const prefix = prefixes[i];
-                    const prefixElement = prefix.getElementsByTagName('Prefix')[0];
+                    const response = await fetch(url);
                     
-                    if (!prefixElement) {
-                        console.warn('⚠️ Prefix element não encontrado no índice', i);
-                        continue;
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const xmlText = await response.text();
+                    console.log(`✅ Sucesso na tentativa ${i + 1}`);
+                    
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+                    // Verifica erros no XML
+                    const errorNode = xmlDoc.querySelector('Error');
+                    if (errorNode) {
+                        const errorCode = xmlDoc.querySelector('Code')?.textContent;
+                        const errorMessage = xmlDoc.querySelector('Message')?.textContent;
+                        throw new Error(`S3 Error: ${errorCode} - ${errorMessage}`);
+                    }
+
+                    // Extrai os prefixos
+                    const prefixes = xmlDoc.getElementsByTagName('CommonPrefixes');
+                    
+                    console.log('📁 Pastas encontradas:', prefixes.length);
+                    
+                    if (prefixes.length === 0) {
+                        throw new Error('Nenhuma pasta encontrada em /apps/');
                     }
                     
-                    const prefixText = prefixElement.textContent;
+                    // Processa as pastas
+                    projects = [];
                     
-                    // Remove "apps/" e a barra final
-                    // "apps/projeto1/" -> "projeto1"
-                    const projectName = prefixText
-                        .replace(APPS_PREFIX, '')
-                        .replace(/\/$/, '');
+                    for (let j = 0; j < prefixes.length; j++) {
+                        const prefix = prefixes[j];
+                        const prefixElement = prefix.getElementsByTagName('Prefix')[0];
+                        
+                        if (!prefixElement) continue;
+                        
+                        const prefixText = prefixElement.textContent;
+                        const projectName = prefixText
+                            .replace(APPS_PREFIX, '')
+                            .replace(/\/$/, '');
+                        
+                        if (!projectName) continue;
+                        
+                        console.log('✅ Projeto:', projectName);
+                        
+                        projects.push({
+                            name: formatProjectName(projectName),
+                            path: `/${prefixText}index.html`,
+                            description: 'Documentação de decisões arquiteturais',
+                            icon: getProjectIcon(projectName),
+                            rawName: projectName
+                        });
+                    }
+
+                    if (projects.length === 0) {
+                        throw new Error('Nenhum projeto válido encontrado');
+                    }
+
+                    // SUCESSO! Mostra os projetos
+                    loading.style.display = 'none';
+                    searchBox.style.display = 'block';
+                    totalProjects.textContent = projects.length;
+                    renderProjects();
                     
-                    // Ignora se o nome estiver vazio
-                    if (!projectName) {
-                        console.warn('⚠️ Nome do projeto vazio, ignorando');
+                    return; // Sai da função, deu certo!
+
+                } catch (error) {
+                    console.warn(`⚠️ Falha na tentativa ${i + 1}:`, error.message);
+                    lastError = error;
+                    
+                    // Se não for a última tentativa, continua para a próxima
+                    if (i < urls.length - 1) {
+                        console.log('🔄 Tentando próxima URL...');
                         continue;
                     }
-                    
-                    console.log('✅ Projeto:', projectName, '| Path:', prefixText);
-                    
-                    projects.push({
-                        name: formatProjectName(projectName),
-                        path: `/${prefixText}`,
-                        description: 'Documentação de decisões arquiteturais',
-                        icon: getProjectIcon(projectName),
-                        rawName: projectName
-                    });
                 }
-
-                console.log('✅ Total processado:', projects.length);
-                console.log('📊 Projetos finais:', projects);
-
-                if (projects.length === 0) {
-                    throw new Error('Nenhum projeto válido encontrado');
-                }
-
-                loading.style.display = 'none';
-                searchBox.style.display = 'block';
-                totalProjects.textContent = projects.length;
-                renderProjects();
-
-            } catch (error) {
-                console.error('💥 Erro:', error);
-                loading.innerHTML = `
-                    <div class="error-message">
-                        <strong>❌ Erro ao carregar projetos</strong>
-                        ${error.message}
-                        <small>Abra o console (F12) para mais detalhes</small>
-                    </div>
-                `;
             }
+            
+            // Se chegou aqui, todas as tentativas falharam
+            console.error('💥 Todas as tentativas falharam. Último erro:', lastError);
+            loading.innerHTML = `
+                <div class="error-message">
+                    <strong>❌ Erro ao carregar projetos</strong>
+                    Tentamos todas as URLs disponíveis mas nenhuma funcionou.<br>
+                    Último erro: ${lastError?.message || 'Desconhecido'}
+                    <small>Abra o console (F12) para mais detalhes</small>
+                </div>
+            `;
         }
 
         function renderProjects(filteredProjects = projects) {
