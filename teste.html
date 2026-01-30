@@ -159,6 +159,18 @@
             border-radius: 8px;
             margin-top: 20px;
         }
+
+        .error-message strong {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .error-message small {
+            display: block;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
     </style>
 </head>
 <body>
@@ -205,9 +217,16 @@
     </div>
 
     <script>
-        // CONFIGURE AQUI
-        const BUCKET_URL = 'https://seu-bucket.s3.us-east-1.amazonaws.com'; // ou sua URL do CloudFront
+        // ==========================================
+        // CONFIGURAÇÃO - MUDE AQUI
+        // ==========================================
+        const BUCKET_NAME = 'seu-bucket';  // <<<< COLOQUE O NOME DO SEU BUCKET
+        const BUCKET_REGION = 'us-east-1'; // <<<< COLOQUE SUA REGIÃO (us-east-1, sa-east-1, etc)
         const APPS_PREFIX = 'apps/';
+        
+        // Endpoint direto do S3 (não CloudFront)
+        const S3_API_URL = `https://${BUCKET_NAME}.s3.${BUCKET_REGION}.amazonaws.com`;
+        // ==========================================
 
         let projects = [];
         const projectGrid = document.getElementById('projectGrid');
@@ -217,7 +236,7 @@
         const totalProjects = document.getElementById('totalProjects');
         const loading = document.getElementById('loading');
 
-        // Ícones baseados no nome
+        // Mapa de ícones baseado no nome do projeto
         const iconMap = {
             'auth': '🔐',
             'payment': '💳',
@@ -234,6 +253,12 @@
             'inventory': '📋',
             'shipping': '🚚',
             'billing': '💰',
+            'report': '📈',
+            'dashboard': '📊',
+            'search': '🔍',
+            'chat': '💬',
+            'email': '📧',
+            'sms': '📱',
             'default': '📁'
         };
 
@@ -246,6 +271,7 @@
         }
 
         function formatProjectName(name) {
+            // Converte "projeto-1" ou "projeto_1" em "Projeto 1"
             return name
                 .replace(/[-_]/g, ' ')
                 .split(' ')
@@ -255,23 +281,53 @@
 
         async function loadProjectsFromS3() {
             try {
-                // Faz requisição para listar objetos no S3
-                const response = await fetch(`${BUCKET_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`);
+                const url = `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`;
+                
+                console.log('🔍 Buscando projetos em:', url);
+                console.log('📦 Bucket:', BUCKET_NAME);
+                console.log('🌍 Região:', BUCKET_REGION);
+                
+                const response = await fetch(url);
+                
+                console.log('📡 Status da resposta:', response.status);
+                console.log('📡 Response OK?:', response.ok);
                 
                 if (!response.ok) {
-                    throw new Error('Erro ao listar projetos do S3');
+                    throw new Error(`Erro HTTP: ${response.status} - ${response.statusText}`);
                 }
 
                 const xmlText = await response.text();
+                
+                console.log('📄 XML recebido (primeiros 500 chars):', xmlText.substring(0, 500));
+                
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+                // Verifica se tem erro no XML
+                const errorNode = xmlDoc.querySelector('Error');
+                if (errorNode) {
+                    const errorCode = xmlDoc.querySelector('Code')?.textContent;
+                    const errorMessage = xmlDoc.querySelector('Message')?.textContent;
+                    console.error('❌ Erro no XML:', errorCode, errorMessage);
+                    throw new Error(`S3 Error: ${errorCode} - ${errorMessage}`);
+                }
 
                 // Extrai os prefixos (pastas)
                 const prefixes = xmlDoc.getElementsByTagName('CommonPrefixes');
                 
+                console.log('📁 Número de CommonPrefixes encontrados:', prefixes.length);
+                
+                if (prefixes.length === 0) {
+                    console.warn('⚠️ Nenhuma pasta encontrada em apps/');
+                    console.log('📄 XML completo:', xmlText);
+                    throw new Error('Nenhuma pasta encontrada em /apps/. Certifique-se de ter feito deploy de pelo menos um projeto.');
+                }
+                
                 projects = Array.from(prefixes).map(prefix => {
                     const prefixText = prefix.getElementsByTagName('Prefix')[0].textContent;
                     const projectName = prefixText.replace(APPS_PREFIX, '').replace('/', '');
+                    
+                    console.log('✅ Projeto encontrado:', projectName);
                     
                     return {
                         name: formatProjectName(projectName),
@@ -282,18 +338,53 @@
                     };
                 });
 
+                console.log('✅ Total de projetos carregados:', projects.length);
+                console.log('📊 Projetos:', projects);
+
                 loading.style.display = 'none';
                 searchBox.style.display = 'block';
                 totalProjects.textContent = projects.length;
                 renderProjects();
 
             } catch (error) {
-                console.error('Erro ao carregar projetos:', error);
+                console.error('💥 Erro completo:', error);
+                
+                let errorDetails = '';
+                
+                if (error.message.includes('CORS')) {
+                    errorDetails = `
+                        <strong>Problema de CORS detectado</strong><br>
+                        Configure CORS no bucket S3:<br>
+                        <code style="display:block; background:#fff; padding:10px; margin:10px 0; border-radius:4px;">
+                        [{<br>
+                        &nbsp;&nbsp;"AllowedHeaders": ["*"],<br>
+                        &nbsp;&nbsp;"AllowedMethods": ["GET", "HEAD"],<br>
+                        &nbsp;&nbsp;"AllowedOrigins": ["*"],<br>
+                        &nbsp;&nbsp;"ExposeHeaders": []<br>
+                        }]
+                        </code>
+                    `;
+                } else if (error.message.includes('AccessDenied')) {
+                    errorDetails = `
+                        <strong>Acesso negado ao bucket</strong><br>
+                        Verifique se o bucket tem Block Public Access desabilitado
+                        ou configure uma Bucket Policy apropriada.
+                    `;
+                } else if (error.message.includes('NoSuchBucket')) {
+                    errorDetails = `
+                        <strong>Bucket não encontrado</strong><br>
+                        Verifique se o nome do bucket está correto: <code>${BUCKET_NAME}</code><br>
+                        E se a região está correta: <code>${BUCKET_REGION}</code>
+                    `;
+                } else {
+                    errorDetails = error.message;
+                }
+                
                 loading.innerHTML = `
                     <div class="error-message">
-                        <strong>❌ Erro ao carregar projetos</strong><br>
-                        ${error.message}<br>
-                        <small>Verifique se o CORS está configurado no bucket S3</small>
+                        <strong>❌ Erro ao carregar projetos</strong>
+                        ${errorDetails}
+                        <small>Abra o console do navegador (F12) para mais detalhes</small>
                     </div>
                 `;
             }
@@ -340,8 +431,8 @@
             filterProjects(e.target.value);
         });
 
-        // Carrega os projetos
+        // Carrega os projetos quando a página carregar
         loadProjectsFromS3();
-    </script> 
+    </script>
 </body>
 </html>
