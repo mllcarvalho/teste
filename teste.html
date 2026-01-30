@@ -283,8 +283,8 @@
         async function loadProjectsFromS3() {
             // Lista de URLs para tentar (em ordem de prioridade)
             const urls = [
-                `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`,  // Tenta primeiro
-                `${S3_API_URL_ALTERNATIVO}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/`  // Fallback
+                `${S3_API_URL}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/&t=${Date.now()}`,  // <<<< ADICIONA timestamp
+                `${S3_API_URL_ALTERNATIVO}/?list-type=2&prefix=${APPS_PREFIX}&delimiter=/&t=${Date.now()}`
             ];
             
             let lastError = null;
